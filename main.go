@@ -18,7 +18,7 @@ type Event struct {
 	Node     string    `json:"node"`
 	Seq      int64     `json:"seq"`
 	Version  int8      `json:"version"`
-	Time     float32   `json:"time"`
+	Time     float64   `json:"time"`
 	Data     EventData `json:"data"`
 	Event    string    `json:"event"`
 }
