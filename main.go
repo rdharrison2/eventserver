@@ -37,6 +37,7 @@ func (es *EventStore) AddEvent(event Event) {
 	es.Lock()
 	defer es.Unlock()
 	es.events = append(es.events, event)
+	log.Printf("Now have %d events", len(es.events))
 }
 
 // GetEvents returns the events in the store
@@ -57,6 +58,7 @@ func (es *EventStore) GetAndClearEvents() []Event {
 	return ret
 }
 
+// Server holds the state of the server
 type Server struct {
 	es EventStore
 }
@@ -68,11 +70,12 @@ func encodeEvents(w io.Writer, events []Event) error {
 
 func decodeEvent(r io.Reader, event *Event) error {
 	decoder := json.NewDecoder(r)
+	decoder.DisallowUnknownFields()
 	return decoder.Decode(event)
 }
 
 func (server *Server) requestHandler(w http.ResponseWriter, req *http.Request) {
-	log.Printf("Handling %s to url %s", req.Method, req.URL)
+	log.Printf("Handling %s to url %s from %s", req.Method, req.URL, req.RemoteAddr)
 	if req.Method == "GET" {
 		if req.URL.Path != "/events" {
 			http.Error(w, "Invalid GET path "+req.URL.Path, http.StatusBadRequest)
@@ -90,6 +93,7 @@ func (server *Server) requestHandler(w http.ResponseWriter, req *http.Request) {
 		err := encodeEvents(w, events)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 	} else if req.Method == "POST" {
 		if req.URL.Path != "/" {
@@ -102,10 +106,12 @@ func (server *Server) requestHandler(w http.ResponseWriter, req *http.Request) {
 		err := decodeEvent(req.Body, &event)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
 		}
 		ip, port, err := net.SplitHostPort(req.RemoteAddr)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 		event.Host = ip
 		event.HostPort = port
