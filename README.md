@@ -32,7 +32,19 @@ docker push rdharrison2/event-server
 go run .
 ```
 
-See --help for usage
+See `--help` for usage
+
+## Simple requests using curl
+
+```
+$ curl http://127.0.0.1:8000/events\?clear=1
+[]
+$ curl -v -d"@event.json" http://127.0.0.1:8000
+```
+
+Add `--user admin:PEXNOTE` for authentication.
+
+## To run tests:
 
 ```
 go test . -v [-cover]

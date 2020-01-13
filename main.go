@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -60,7 +61,13 @@ func (es *EventStore) GetAndClearEvents() []Event {
 
 // Server holds the state of the server
 type Server struct {
-	es EventStore
+	es       EventStore
+	userpass *Credential
+}
+
+// Credential represents a username/password pair
+type Credential struct {
+	Username, Password string
 }
 
 func encodeEvents(w io.Writer, events []Event) error {
@@ -120,25 +127,59 @@ func (server *Server) requestHandler(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
+func BasicAuth(handler http.HandlerFunc, realm string, cred Credential) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		user, pass, ok := req.BasicAuth()
+		if !ok ||
+			subtle.ConstantTimeCompare([]byte(user), []byte(cred.Username)) != 1 ||
+			subtle.ConstantTimeCompare([]byte(pass), []byte(cred.Password)) != 1 {
+			w.Header().Set("WWW-Authenticate", `Basic realm="`+realm+`"`)
+			w.WriteHeader(401)
+			w.Write([]byte("You are Unauthorized to access the application.\n"))
+			return
+		}
+		handler(w, req)
+	}
+}
+
+// handler returns a new http.ServeMux setup to route requests to server
+func (server *Server) handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/events", server.requestHandler)
+	if server.userpass != nil {
+		mux.HandleFunc("/", BasicAuth(server.requestHandler, "events", *server.userpass))
+	} else {
+		mux.HandleFunc("/", server.requestHandler)
+	}
+	return mux
+}
+
 // StartServer spins up a http server, returns error if it fails
-func StartServer(port int, useTLS bool) error {
-	log.Printf("Starting event server (port=%d, useTLS=%v)\n", port, useTLS)
+func StartServer(port int, useTLS bool, userpass *Credential) error {
+	log.Printf("Starting event server (port=%d, useTLS=%v, userpass=%v)\n", port, useTLS, userpass)
 	var s Server
-	http.HandleFunc("/", s.requestHandler)
+	s.userpass = userpass
+	h := s.handler()
 	addr := fmt.Sprintf(":%d", port)
 	if useTLS {
 		return http.ListenAndServeTLS(
 			addr,
 			"/etc/certs/server.pem",
 			"/etc/certs/privatekey.pem",
-			nil)
+			h)
 	}
-	return http.ListenAndServe(addr, nil)
+	return http.ListenAndServe(addr, h)
 }
 
 func main() {
 	port := flag.Int("port", 8000, "Port to listen on")
 	useTLS := flag.Bool("use-tls", false, "Use TLS")
+	username := flag.String("user", "", "Username for auth")
+	password := flag.String("password", "", "Password for auth")
 	flag.Parse()
-	log.Fatal(StartServer(*port, *useTLS))
+	var cred *Credential
+	if *username != "" && *password != "" {
+		cred = &Credential{Username: *username, Password: *password}
+	}
+	log.Fatal(StartServer(*port, *useTLS, cred))
 }

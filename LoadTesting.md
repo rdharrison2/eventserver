@@ -1,11 +1,5 @@
 
-# Simple requests using curl
 
-```
-$ curl http://127.0.0.1:8000/events\?clear=1
-[]
-$ curl -d"@event.json" http://127.0.0.1:8000
-```
 
 # Load testing with Apache ab
 
