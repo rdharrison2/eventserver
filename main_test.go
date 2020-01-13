@@ -54,6 +54,8 @@ func TestGetRequests(t *testing.T) {
 	}{
 		{"events", false, "/events", http.StatusOK, "[]\n"},
 		{"events_authenticated", true, "/events", http.StatusOK, "[]\n"},
+		{"events_clear", false, "/events?clear=1", http.StatusOK, "[]\n"},
+		{"events_clear_authenticated", true, "/events?clear=1", http.StatusOK, "[]\n"},
 		{"bad path", false, "/favicon.ico", http.StatusBadRequest, "Invalid GET path /favicon.ico\n"},
 		{"bad path authenticated", true, "/favicon.ico", http.StatusUnauthorized, "You are Unauthorized to access the application.\n"},
 	}

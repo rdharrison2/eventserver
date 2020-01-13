@@ -55,6 +55,9 @@ func (es *EventStore) GetAndClearEvents() []Event {
 	es.Lock()
 	defer es.Unlock()
 	ret := es.events
+	if ret == nil {
+		ret = []Event{}
+	}
 	es.events = []Event{}
 	return ret
 }
@@ -133,6 +136,7 @@ func BasicAuth(handler http.HandlerFunc, realm string, cred Credential) http.Han
 		if !ok ||
 			subtle.ConstantTimeCompare([]byte(user), []byte(cred.Username)) != 1 ||
 			subtle.ConstantTimeCompare([]byte(pass), []byte(cred.Password)) != 1 {
+			log.Printf("Bad username/password from %s", req.RemoteAddr)
 			w.Header().Set("WWW-Authenticate", `Basic realm="`+realm+`"`)
 			w.WriteHeader(401)
 			w.Write([]byte("You are Unauthorized to access the application.\n"))
