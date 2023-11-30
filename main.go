@@ -22,10 +22,21 @@ type Event struct {
 	Time     float64   `json:"time"`
 	Data     EventData `json:"data"`
 	Event    string    `json:"event"`
+	Bulked   bool      `json:"bulked"`
 }
 
 // EventData is an arbitrary mapping of key=value
 type EventData map[string]interface{}
+
+// represents a bulk event
+type BulkEvent struct {
+	Node    string  `json:"node"`
+	Seq     int64   `json:"seq"`
+	Version int8    `json:"version"`
+	Time    float64 `json:"time"`
+	Data    []Event `json:"data"`
+	Event   string  `json:"event"`
+}
 
 // EventStore is a thread-safe list of events
 type EventStore struct {
@@ -78,10 +89,25 @@ func encodeEvents(w io.Writer, events []Event) error {
 	return encoder.Encode(events)
 }
 
-func decodeEvent(r io.Reader, event *Event) error {
-	decoder := json.NewDecoder(r)
-	decoder.DisallowUnknownFields()
-	return decoder.Decode(event)
+func decodeEvents(data []byte) ([]Event, error) {
+	var event Event
+	// try decoding as a single event
+	err := json.Unmarshal(data, &event)
+	if err == nil {
+		return []Event{event}, nil
+	}
+	// then as bulk event
+	var bulk BulkEvent
+	err = json.Unmarshal(data, &bulk)
+	if err == nil {
+		// TODO: assert that bulk.Event is eventsink_bulk
+		for i := 0; i < len(bulk.Data); i++ {
+			bulk.Data[i].Bulked = true
+			log.Printf("Bulked event = %+v\n", bulk.Data[i])
+		}
+		return bulk.Data, nil
+	}
+	return []Event{}, err
 }
 
 func (server *Server) requestHandler(w http.ResponseWriter, req *http.Request) {
@@ -112,21 +138,25 @@ func (server *Server) requestHandler(w http.ResponseWriter, req *http.Request) {
 		}
 		defer req.Body.Close()
 		// TODO: more input validation on post body data
-		var event Event
-		err := decodeEvent(req.Body, &event)
+		body, _ := io.ReadAll(req.Body)
+		events, err := decodeEvents(body)
 		if err != nil {
+			log.Printf("Failed to decode body: %s", err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		log.Printf("Received %d events\n", len(events))
 		ip, port, err := net.SplitHostPort(req.RemoteAddr)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		event.Host = ip
-		event.HostPort = port
-		log.Printf("Received event %+v\n", event)
-		server.es.AddEvent(event)
+		for _, event := range events {
+			log.Printf("Adding event to store %+v\n", event)
+			event.Host = ip
+			event.HostPort = port
+			server.es.AddEvent(event)
+		}
 	}
 }
 
